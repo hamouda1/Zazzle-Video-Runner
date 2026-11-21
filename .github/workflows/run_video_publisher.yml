@@ -1,79 +1,108 @@
-name: "24/7 Zazzle Video Pin Cloud Runner"
+name: Zazzle video publisher
 
 on:
   schedule:
-    # Runs every 4 hours at minute 10 (unlimited free minutes on public repo)
     - cron: '10 */4 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Dry run (simulate rendering without publishing to Pinterest)"
-        required: false
+        description: Render a preview without contacting Pinterest
+        type: boolean
+        default: true
+      target_board:
+        description: Optional configured board ID
+        type: string
+        default: ''
+      upload_preview:
+        description: Upload preview media to this public repository (visible to readers)
         type: boolean
         default: false
 
 permissions:
   contents: read
 
+concurrency:
+  group: zazzle-video-publication
+  cancel-in-progress: false
+
+env:
+  # Updated to the exact tested engine commit before this change is proposed.
+  ENGINE_CODE_SHA: 8009e330069d712cd5d042e9dde434319a244a22
+  DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+
 jobs:
   execute-video-cycle:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
+    if: github.ref == 'refs/heads/main' && (github.event_name != 'schedule' || vars.VIDEO_PUBLISH_ENABLED == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-
-      - name: Checkout Private Engine
-        uses: actions/checkout@v4
+      - name: Checkout tested private engine code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: hamouda1/Zazzle-Video-PinEngine
+          ref: ${{ env.ENGINE_CODE_SHA }}
           token: ${{ secrets.GH_PAT }}
+          persist-credentials: false
           path: engine
-          fetch-depth: 1
-
-      - name: Install System Libraries & Python Dependencies
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: engine/requirements.txt
+      - name: Install locked dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0
-          python -m pip install --upgrade pip
-          pip install -r engine/requirements.txt
-          playwright install chromium --with-deps
-
-      - name: Execute Video Pin Publisher
+          python -m pip install -r engine/requirements.txt
+          python -m playwright install chromium --with-deps
+      - name: Verify publisher contract and offline tests
+        working-directory: engine
+        run: |
+          python -c "import json; assert json.load(open('workflow-contract.json'))['version'] == 2"
+          python -m unittest discover -s tests -v
+      - name: Load latest queue state independently of pinned code
+        working-directory: engine
+        env:
+          ENGINE_STATE_TOKEN: ${{ secrets.GH_PAT }}
+        run: python queue_sync.py pull
+      - name: Render preview
+        if: env.DRY_RUN == 'true'
+        working-directory: engine
+        env:
+          TARGET_BOARD: ${{ inputs.target_board }}
+        run: python video_publisher.py --dry-run
+      - name: Prepare media and local publication reservation
+        id: prepare
+        if: env.DRY_RUN != 'true'
+        working-directory: engine
+        env:
+          TARGET_BOARD: ${{ inputs.target_board }}
+          PINTEREST_ACCOUNTS_JSON: ${{ secrets.PINTEREST_ACCOUNTS_JSON }}
+        run: python video_publisher.py --prepare
+      - name: Durably checkpoint queue before any Pin creation
+        id: checkpoint
+        if: ${{ !cancelled() && env.DRY_RUN != 'true' && (steps.prepare.outcome == 'success' || steps.prepare.outcome == 'failure') }}
+        working-directory: engine
+        env:
+          ENGINE_STATE_TOKEN: ${{ secrets.GH_PAT }}
+        run: python queue_sync.py commit
+      - name: Create exactly one reserved Pin attempt
+        if: ${{ success() && steps.prepare.outputs.has_plan == 'true' && steps.checkpoint.outcome == 'success' }}
+        working-directory: engine
         env:
           PINTEREST_ACCOUNTS_JSON: ${{ secrets.PINTEREST_ACCOUNTS_JSON }}
-          ZAZZLE_ASSOCIATE_ID: ${{ secrets.ZAZZLE_ASSOCIATE_ID || '238209628121657582' }}
-          GH_PAT: ${{ secrets.GH_PAT }}
-        run: |
-          cd engine
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            python publish_video_pin.py --dry-run
-          else
-            python publish_video_pin.py
-          fi
-
-      - name: Upload Video Preview Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
+        run: python video_publisher.py --publish-prepared
+      - name: Persist result or review-required marker
+        if: ${{ always() && env.DRY_RUN != 'true' && steps.prepare.outputs.has_plan == 'true' && steps.checkpoint.outcome == 'success' }}
+        working-directory: engine
+        env:
+          ENGINE_STATE_TOKEN: ${{ secrets.GH_PAT }}
+        run: python queue_sync.py commit
+      - name: Upload explicitly requested public preview
+        if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.dry_run && inputs.upload_preview }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: video-pin-preview
+          name: video-preview-public
           path: |
-            engine/temp_media/*.mp4
-            engine/temp_media/*_cover.jpg
-          retention-days: 7
-          if-no-files-found: ignore
-
-      - name: Commit & Push Updated Queues to Private Engine
-        if: success() && inputs.dry_run != true
-        run: |
-          cd engine
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add video_queues.json
-          if ! git diff --staged --quiet; then
-            git commit -m "Auto: Update video pin queue state [skip ci]"
-            git pull --rebase origin main
-            git push origin main
-          fi
+            engine/temp_media/**/*.mp4
+            engine/temp_media/**/*_cover.jpg
+          retention-days: 1
+          if-no-files-found: error

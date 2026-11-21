@@ -27,7 +27,7 @@ concurrency:
 
 env:
   # Updated to the exact tested engine commit before this change is proposed.
-  ENGINE_CODE_SHA: 0bd73270ea6331162825111326e312f1d24d5ab1
+  ENGINE_CODE_SHA: 96acdbb7f024b5e02420f8b33255e76af9e91609
   DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
 
 jobs:

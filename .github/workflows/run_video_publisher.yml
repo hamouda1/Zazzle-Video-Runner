@@ -12,13 +12,17 @@ on:
         type: boolean
         default: false
 
+concurrency:
+  group: zazzle-video-publisher
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
 jobs:
   execute-video-cycle:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 120
 
     steps:
       - name: Set up Python 3.10
@@ -34,6 +38,12 @@ jobs:
           path: engine
           fetch-depth: 1
 
+      - name: Configure Git Identity in Engine
+        run: |
+          cd engine
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Install System Libraries & Python Dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0
@@ -41,7 +51,7 @@ jobs:
           pip install -r engine/requirements.txt
           playwright install chromium --with-deps
 
-      - name: Execute Video Pin Publisher
+      - name: Execute Multi-Account Staggered Video Pin Publisher
         env:
           PINTEREST_ACCOUNTS_JSON: ${{ secrets.PINTEREST_ACCOUNTS_JSON }}
           ZAZZLE_ASSOCIATE_ID: ${{ secrets.ZAZZLE_ASSOCIATE_ID || '238209628121657582' }}
@@ -65,15 +75,13 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Commit & Push Updated Queues to Private Engine
+      - name: Final Queue State Sync
         if: success() && inputs.dry_run != true
         run: |
           cd engine
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add video_queues.json
           if ! git diff --staged --quiet; then
-            git commit -m "Auto: Update video pin queue state [skip ci]"
-            git pull --rebase origin main
-            git push origin main
+            git commit -m "Auto: Final queue state sync [skip ci]" || true
+            git pull --rebase origin main || true
+            git push origin main || true
           fi

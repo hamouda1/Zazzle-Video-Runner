@@ -11,6 +11,11 @@ on:
         required: false
         type: boolean
         default: true
+      upload_preview:
+        description: "Upload MP4/JPG previews publicly for one day"
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: zazzle-video-publisher
@@ -36,13 +41,8 @@ jobs:
           repository: hamouda1/Zazzle-Video-PinEngine
           token: ${{ secrets.GH_PAT }}
           path: engine
-          fetch-depth: 0
-
-      - name: Configure Git Identity in Engine
-        run: |
-          cd engine
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          fetch-depth: 1
+          persist-credentials: false
 
       - name: Install System Libraries & Python Dependencies
         run: |
@@ -71,25 +71,13 @@ jobs:
             python publish_video_pin.py
           fi
 
-      - name: Upload Video Preview & Recovery Artifacts
-        if: always()
+      - name: Upload explicitly requested public video previews
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.dry_run && inputs.upload_preview
         uses: actions/upload-artifact@v4
         with:
           name: video-pin-preview
           path: |
-            engine/temp_media/*.mp4
-            engine/temp_media/*_cover.jpg
-            engine/.recovery_receipts/*.json
-          retention-days: 14
+            engine/temp_media/**/*.mp4
+            engine/temp_media/**/*_cover.jpg
+          retention-days: 1
           if-no-files-found: ignore
-
-      - name: Final Queue State Sync
-        if: success() && inputs.dry_run != true
-        run: |
-          cd engine
-          git add video_queues.json
-          if ! git diff --staged --quiet; then
-            git commit -m "Auto: Final queue state sync [skip ci]"
-            git pull --rebase origin main
-            git push origin main
-          fi

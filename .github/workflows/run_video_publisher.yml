@@ -10,7 +10,7 @@ on:
         description: "Dry run (simulate rendering without publishing to Pinterest)"
         required: false
         type: boolean
-        default: false
+        default: true
 
 concurrency:
   group: zazzle-video-publisher
@@ -25,10 +25,10 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - name: Set up Python 3.10
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.12"
 
       - name: Checkout Private Engine
         uses: actions/checkout@v4
@@ -51,8 +51,15 @@ jobs:
           pip install -r engine/requirements.txt
           playwright install chromium --with-deps
 
+      - name: Install isolated Creative Engine 4.2.0
+        run: |
+          sudo apt-get install -y --no-install-recommends fonts-dejavu-core
+          cd engine
+          bash creative_setup_linux.sh
+
       - name: Execute Multi-Account Staggered Video Pin Publisher
         env:
+          CREATIVE_ENGINE_PYTHON: ${{ github.workspace }}/engine/.venv-creative/bin/python
           PINTEREST_ACCOUNTS_JSON: ${{ secrets.PINTEREST_ACCOUNTS_JSON }}
           ZAZZLE_ASSOCIATE_ID: ${{ secrets.ZAZZLE_ASSOCIATE_ID || '238209628121657582' }}
           GH_PAT: ${{ secrets.GH_PAT }}

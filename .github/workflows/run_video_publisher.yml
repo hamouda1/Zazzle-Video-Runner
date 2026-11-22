@@ -35,7 +35,6 @@ jobs:
         with:
           repository: hamouda1/Zazzle-Video-PinEngine
           token: ${{ secrets.GH_PAT }}
-          ref: 176d3dde3fea6724e907e9962b177d589ff17fd1
           path: engine
           fetch-depth: 1
 

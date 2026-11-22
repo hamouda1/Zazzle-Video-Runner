@@ -17,6 +17,11 @@ on:
         description: Upload preview media to this public repository (visible to readers)
         type: boolean
         default: false
+      template:
+        description: Creative template for a manual preview
+        type: choice
+        default: auto
+        options: [auto, F01, F03, F04, F06, F07]
 
 permissions:
   contents: read
@@ -27,15 +32,29 @@ concurrency:
 
 env:
   # Updated to the exact tested engine commit before this change is proposed.
-  ENGINE_CODE_SHA: 810f0d553ab0c390bdc38adc971c40cfa1b49410
+  ENGINE_CODE_SHA: cd981f2db5c76e3522bc9d867e0300cd6c6a2844
   DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+  VIDEO_RENDER_BACKEND: creative
+  CREATIVE_ENGINE_PYTHON: ${{ github.workspace }}/engine/.venv-creative/bin/python
+  CREATIVE_TEMPLATE: ${{ inputs.template || 'auto' }}
+  CREATIVE_IMAGE_RIGHTS_CONFIRMED: ${{ vars.CREATIVE_IMAGE_RIGHTS_CONFIRMED || 'false' }}
 
 jobs:
   execute-video-cycle:
-    if: github.ref == 'refs/heads/main' && (github.event_name != 'schedule' || vars.VIDEO_PUBLISH_ENABLED == 'true')
+    if: github.ref == 'refs/heads/main' && (github.event_name != 'schedule' || (vars.VIDEO_PUBLISH_ENABLED == 'true' && vars.CREATIVE_IMAGE_RIGHTS_CONFIRMED == 'true'))
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
+      - name: Check explicit live publication policy
+        if: env.DRY_RUN != 'true'
+        env:
+          PUBLISH_ENABLED: ${{ vars.VIDEO_PUBLISH_ENABLED }}
+          RIGHTS_CONFIRMED: ${{ vars.CREATIVE_IMAGE_RIGHTS_CONFIRMED }}
+        run: |
+          if [ "$PUBLISH_ENABLED" != true ] || [ "$RIGHTS_CONFIRMED" != true ]; then
+            echo '::error::Live publication is disabled. Use dry_run=true for previews.'
+            exit 1
+          fi
       - name: Checkout tested private engine code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -46,13 +65,17 @@ jobs:
           path: engine
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
           cache: pip
           cache-dependency-path: engine/requirements.txt
       - name: Install locked dependencies
         run: |
           python -m pip install -r engine/requirements.txt
-          python -m playwright install chromium --with-deps
+      - name: Install isolated locked creative renderer
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends fonts-dejavu-core
+          bash engine/creative_setup_linux.sh
       - name: Verify publisher contract and offline tests
         working-directory: engine
         run: |

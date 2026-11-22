@@ -71,7 +71,7 @@ jobs:
             python publish_video_pin.py
           fi
 
-      - name: Upload Video Preview Artifacts
+      - name: Upload Video Preview & Recovery Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -79,7 +79,8 @@ jobs:
           path: |
             engine/temp_media/*.mp4
             engine/temp_media/*_cover.jpg
-          retention-days: 7
+            engine/.recovery_receipts/*.json
+          retention-days: 14
           if-no-files-found: ignore
 
       - name: Final Queue State Sync

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "engine_repository": "hamouda1/Zazzle-Video-PinEngine",
+  "engine_code_sha": "cd981f2db5c76e3522bc9d867e0300cd6c6a2844",
+  "creative_version": "4.2.0",
+  "publisher_protocol": "prepare-checkpoint-publish-checkpoint",
+  "backend": "creative",
+  "python": "3.12",
+  "runner": "ubuntu-24.04",
+  "preview_by_default": true,
+  "linux_validation_run": 45019396870
+}

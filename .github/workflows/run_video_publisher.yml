@@ -1,4 +1,5 @@
 name: "24/7 Zazzle Video Pin Cloud Runner"
+run-name: ${{ inputs.publication_slot && format('Recovery {0}', inputs.publication_slot) || github.workflow }}
 
 on:
   schedule:
@@ -11,6 +12,11 @@ on:
         required: false
         type: boolean
         default: true
+      publication_slot:
+        description: "Optional UTC slot YYYY-MM-DDTHH:10:00Z; max age 8 hours"
+        required: false
+        type: string
+        default: ''
       upload_preview:
         description: "Upload MP4/JPG previews publicly for one day"
         required: false
@@ -23,6 +29,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   execute-video-cycle:
@@ -30,6 +37,10 @@ jobs:
     timeout-minutes: 120
 
     steps:
+      - name: Checkout Runner helpers
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -44,6 +55,14 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Cache dependency downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/ms-playwright
+          key: linux-py312-deps-${{ hashFiles('engine/requirements.txt', 'engine/creative/*lock.txt') }}
+
       - name: Install System Libraries & Python Dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0
@@ -57,8 +76,17 @@ jobs:
           cd engine
           bash creative_setup_linux.sh
 
+      - name: Resolve publication slot
+        id: slot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_SLOT: ${{ inputs.publication_slot }}
+        run: python prepare_slot.py
+
       - name: Execute Multi-Account Staggered Video Pin Publisher
         env:
+          PUBLICATION_SLOT: ${{ steps.slot.outputs.slot }}
+          PYTHONUNBUFFERED: "1"
           CREATIVE_ENGINE_PYTHON: ${{ github.workspace }}/engine/.venv-creative/bin/python
           PINTEREST_ACCOUNTS_JSON: ${{ secrets.PINTEREST_ACCOUNTS_JSON }}
           ZAZZLE_ASSOCIATE_ID: ${{ secrets.ZAZZLE_ASSOCIATE_ID || '238209628121657582' }}

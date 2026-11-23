@@ -27,7 +27,7 @@ class RunnerPolicy(unittest.TestCase):
         self.assertNotIn('receipt', upload['with']['path'])
 
     def test_source_checkout_does_not_persist_git_credentials(self):
-        checkout = next(s for s in self.steps if s.get('uses', '').startswith('actions/checkout'))
+        checkout = next(s for s in self.steps if s.get('with', {}).get('repository') == 'hamouda1/Zazzle-Video-PinEngine')
         self.assertEqual(checkout['with']['persist-credentials'], 'false')
         self.assertEqual(checkout['with']['repository'], 'hamouda1/Zazzle-Video-PinEngine')
 

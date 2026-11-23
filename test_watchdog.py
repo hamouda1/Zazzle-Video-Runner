@@ -17,6 +17,10 @@ class WatchdogTests(unittest.TestCase):
         api=Mock(return_value={'workflow_runs':[{'created_at':'2026-11-23T04:11:00Z','head_branch':'main','status':'in_progress'}]})
         self.assertEqual(watchdog.check(datetime(2026,11,23,6,tzinfo=timezone.utc),'fake',api),'already_active')
         self.assertEqual(api.call_count,1)
+    def test_completed_recovery_is_not_dispatched_again(self):
+        api=Mock(return_value={'workflow_runs':[{'created_at':'2026-11-23T05:11:00Z','head_branch':'main','status':'completed','event':'workflow_dispatch','conclusion':'success','display_title':'Recovery 2026-11-23T04:10:00Z'}]})
+        self.assertEqual(watchdog.check(datetime(2026,11,23,6,tzinfo=timezone.utc),'fake',api),'recovery_run_present')
+        self.assertEqual(api.call_count,1)
     def test_grace_does_not_call_api(self):
         api=Mock(); self.assertEqual(watchdog.check(datetime(2026,11,23,4,30,tzinfo=timezone.utc),'fake',api),'within_grace'); api.assert_not_called()
     def test_missing_slot_dispatches_explicit_live_slot(self):

@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {check,latestSlot} from './worker.mjs';
+assert.equal(latestSlot(new Date('2026-11-24T00:09:00Z')).toISOString(),'2026-11-23T20:10:00.000Z');
+const now=new Date('2026-11-24T02:00:00Z');
+let calls=[];
+const empty=async(u,o)=>{calls.push([u,o]);return new Response(JSON.stringify({workflow_runs:[]}),{status:200});};
+assert.equal((await check({},now,empty)).status,'missing_slot_credentials_required');
+assert.equal(calls.length,1);
+calls=[];
+const dispatch=async(u,o)=>{calls.push([u,o]);return o.method==='POST'?new Response(null,{status:204}):empty(u,o);};
+assert.equal((await check({GH_TOKEN:'fixture'},now,dispatch)).status,'dispatched');
+assert.equal(JSON.parse(calls.at(-1)[1].body).inputs.publication_slot,'2026-11-24T00:10:00Z');
+const failed=async()=>new Response(JSON.stringify({workflow_runs:[{created_at:'2026-11-24T01:20:00Z',head_branch:'main',status:'completed',event:'schedule',conclusion:'failure'}]}));
+await assert.rejects(check({},now,failed),/manual review/);
+assert.equal((await check({},new Date('2026-11-24T00:30:00Z'),()=>{throw Error('unexpected')})).status,'grace');
+console.log('5 Worker checks passed');

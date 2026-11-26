@@ -1,5 +1,5 @@
 name: "24/7 Zazzle Video Pin Cloud Runner"
-run-name: ${{ inputs.publication_slot && format('Recovery {0}', inputs.publication_slot) || github.workflow }}
+run-name: ${{ inputs.dry_run && 'Preview (no publication)' || inputs.publication_slot && format('Recovery {0}', inputs.publication_slot) || github.workflow }}
 
 on:
   schedule:

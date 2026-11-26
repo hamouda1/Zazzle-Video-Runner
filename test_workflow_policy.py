@@ -26,6 +26,11 @@ class RunnerPolicy(unittest.TestCase):
         self.assertNotIn('json', upload['with']['path'])
         self.assertNotIn('receipt', upload['with']['path'])
 
+    def test_preview_run_name_takes_precedence_over_recovery(self):
+        expression = self.config['run-name']
+        self.assertLess(expression.index('inputs.dry_run'), expression.index('inputs.publication_slot'))
+        self.assertIn('Preview (no publication)', expression)
+
     def test_source_checkout_does_not_persist_git_credentials(self):
         checkout = next(s for s in self.steps if s.get('with', {}).get('repository') == 'hamouda1/Zazzle-Video-PinEngine')
         self.assertEqual(checkout['with']['persist-credentials'], 'false')
